@@ -231,6 +231,8 @@ def network_preflight_urls(config: dict[str, Any], enabled_sources: list[str]) -
         urls.extend(["https://export.arxiv.org/", "https://arxiv.org/"])
     if "openreview" in enabled_sources:
         urls.extend(["https://openreview.net/", "https://api2.openreview.net/"])
+    if "openalex" in enabled_sources:
+        urls.append("https://api.openalex.org/")
     return unique_preserve_order(urls)
 
 

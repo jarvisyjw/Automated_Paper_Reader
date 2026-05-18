@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from fetch_arxiv import fetch_arxiv
+from fetch_openalex import fetch_openalex
 from fetch_openreview import fetch_openreview
 from rank_papers import build_candidate_pool
 from utils import (
@@ -51,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--lookback-days", type=int, default=None, help="Override source lookback days")
     parser.add_argument("--force", action="store_true", help="Overwrite existing candidate outputs")
-    parser.add_argument("--sources", default=None, help="Comma-separated source list, e.g. arxiv,openreview")
+    parser.add_argument("--sources", default=None, help="Comma-separated source list, e.g. arxiv,openreview,openalex")
     return parser.parse_args()
 
 
@@ -128,6 +129,14 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         source_counts["openreview"] = len(papers)
         source_warnings["openreview"] = warnings
 
+    if "openalex" in enabled_sources:
+        source_config = config.get("sources", {}).get("openalex", {})
+        lookback = args.lookback_days or int(source_config.get("lookback_days", 3))
+        papers, warnings = fetch_openalex(source_config, research_profile, report_date, lookback, logger)
+        all_papers.extend(papers)
+        source_counts["openalex"] = len(papers)
+        source_warnings["openalex"] = warnings
+
     deduped = dedupe_papers(all_papers)
     logger.info("Total papers fetched=%s, deduped=%s", len(all_papers), len(deduped))
 
@@ -203,7 +212,7 @@ def resolve_enabled_sources(args: argparse.Namespace, config: dict[str, Any]) ->
             for name, source_config in config.get("sources", {}).items()
             if source_config.get("enabled", True)
         ]
-    supported = {"arxiv", "openreview"}
+    supported = {"arxiv", "openreview", "openalex"}
     return [source for source in requested if source in supported]
 
 

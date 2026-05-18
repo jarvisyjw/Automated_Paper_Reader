@@ -10,18 +10,19 @@ CAPR is a lightweight workflow for building a customizable daily academic-paper 
 
 It separates the job into two parts:
 
-1. `paper-daily` fetches, normalizes, deduplicates, and coarsely ranks candidate papers from arXiv and OpenReview.
+1. `paper-daily` fetches, normalizes, deduplicates, and coarsely ranks candidate papers from arXiv, OpenReview, and optional OpenAlex.
 2. Codex reads the candidate pool, scores papers semantically, selects the most useful papers, and writes a Markdown daily report.
 
 The core principle is intentional: the Python scripts do not write the final literature review. They only prepare a high-quality candidate pool so Codex can act as the research assistant.
 
 ## 📰 News
 
+- 2026-05-18 ✨ Added OpenAlex as an optional fetch source: it can run alongside arXiv / OpenReview when enabled, but remains off by default so the daily primary flow is unchanged.
 - 2026-05-18 ⚙️ Fixed the arXiv daily-fetch logic: CAPR now treats HTML recent-list announcement dates as the daily candidate-batch source, avoids misses from lagging abs/API dates, and writes a no-new-batch note instead of reusing older batches when the target date has no fresh or non-duplicate candidates.
 
 ## ✨ Features
 
-- Fetch recent papers from arXiv and OpenReview.
+- Fetch recent papers from arXiv and OpenReview, with OpenAlex available as a disabled-by-default optional source.
 - Normalize metadata into a consistent JSON schema.
 - Deduplicate by source ID and normalized title.
 - Rank candidates with transparent rule-based retrieval hints.
@@ -48,6 +49,7 @@ Codex_Automated_Paper_Reader/
     ├── scripts/
     │   ├── daily_papers.py
     │   ├── fetch_arxiv.py
+    │   ├── fetch_openalex.py
     │   ├── fetch_openreview.py
     │   ├── rank_papers.py
     │   └── utils.py

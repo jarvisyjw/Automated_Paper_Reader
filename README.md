@@ -2,29 +2,27 @@
 
 > 中文 | [English](README.en.md)
 
-CAPR 是一个用 Codex 自动化完成每日论文候选检索、语义筛选和学术日报生成的轻量级工作流。
-
-它把任务拆成两个层次：
-
-1. `paper-daily` 脚本只负责从 arXiv / OpenReview 抓取候选论文、统一元数据、去重和粗排序。
-2. Codex 作为科研助理读取候选池，逐篇语义评分，选择高价值论文，并撰写最终 Markdown 日报。
-
-核心原则：脚本只提供候选池和可解释的检索线索，最终推荐与总结由 Codex 完成。
-
-
 ## 🖼️ Daily Report预览
 
 ![Daily Report 预览](paper-daily/tutorial/daily%20report.png)
 
+CAPR 是一个用 Codex 自动化完成每日论文候选检索、语义筛选和学术日报生成的轻量级工作流。
 
+它把任务拆成两个层次：
+
+1. `paper-daily` 脚本只负责从 arXiv / OpenReview / 可选 OpenAlex 抓取候选论文、统一元数据、去重和粗排序。
+2. Codex 作为科研助理读取候选池，逐篇语义评分，选择高价值论文，并撰写最终 Markdown 日报。
+
+核心原则：脚本只提供候选池和可解释的检索线索，最终推荐与总结由 Codex 完成。
 
 ## 📰 News
 
+- 2026-05-18 ✨ 新增 OpenAlex 抓取源：可与 arXiv / OpenReview 并列参与候选池构建，但在默认配置中保持关闭，避免改变日常主流程。
 - 2026-05-18 ⚙️ 修复 arXiv 日报抓取逻辑：HTML recent-list 公告日期优先；无新批次或候选池重复时输出说明简报，不再复用旧批次。
 
 ## ✨ 功能特性
 
-- 从 arXiv 和 OpenReview 抓取近期论文候选。
+- 从 arXiv 和 OpenReview 抓取近期论文候选，并提供默认关闭的 OpenAlex 可选抓取源。
 - 将不同来源论文统一为一致的 JSON schema。
 - 基于 source ID 和标准化标题去重。
 - 用透明的规则分数提供候选粗排线索。
@@ -51,6 +49,7 @@ Codex_Automated_Paper_Reader/
     ├── scripts/
     │   ├── daily_papers.py
     │   ├── fetch_arxiv.py
+    │   ├── fetch_openalex.py
     │   ├── fetch_openreview.py
     │   ├── rank_papers.py
     │   └── utils.py

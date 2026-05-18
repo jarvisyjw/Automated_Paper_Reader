@@ -15,6 +15,7 @@ from fetch_arxiv import (
     parse_arxiv_recent_refs,
 )
 from fetch_openreview import normalize_openreview_note
+from fetch_openalex import abstract_from_inverted_index, normalize_openalex_work
 
 
 class Obj:
@@ -250,3 +251,55 @@ def test_openreview_dict_note_normalization_for_http_api_fallback():
     assert paper["title"] == "Adaptive Sensor Forecasting"
     assert paper["authors"] == ["Eve"]
     assert "time series" in paper["categories"]
+
+
+def test_openalex_work_normalization():
+    work = {
+        "id": "https://openalex.org/W123456789",
+        "doi": "https://doi.org/10.1000/test",
+        "display_name": "Adaptive Neural Decoding with EEG Signals",
+        "publication_date": "2026-05-15",
+        "updated_date": "2026-05-16T12:00:00Z",
+        "authorships": [
+            {"author": {"display_name": "Alice"}},
+            {"author": {"display_name": "Bob"}},
+        ],
+        "abstract_inverted_index": {
+            "We": [0],
+            "decode": [1],
+            "neural": [2],
+            "signals": [3],
+        },
+        "primary_location": {
+            "landing_page_url": "https://example.org/paper",
+            "source": {"display_name": "Example Journal"},
+        },
+        "best_oa_location": {
+            "pdf_url": "https://example.org/paper.pdf",
+        },
+        "topics": [{"display_name": "Brain-computer interface"}],
+        "concepts": [{"display_name": "Electroencephalography"}],
+        "type": "article",
+        "cited_by_count": 7,
+    }
+
+    paper = normalize_openalex_work(work)
+
+    assert paper["source"] == "openalex"
+    assert paper["id"] == "W123456789"
+    assert paper["title"] == "Adaptive Neural Decoding with EEG Signals"
+    assert paper["authors"] == ["Alice", "Bob"]
+    assert paper["abstract"] == "We decode neural signals"
+    assert paper["url"] == "https://doi.org/10.1000/test"
+    assert paper["pdf_url"] == "https://example.org/paper.pdf"
+    assert paper["published_at"].startswith("2026-05-15")
+    assert paper["venue"] == "Example Journal"
+    assert "Brain-computer interface" in paper["categories"]
+    assert paper["doi"] == "https://doi.org/10.1000/test"
+    assert paper["cited_by_count"] == 7
+
+
+def test_openalex_abstract_from_inverted_index_skips_bad_positions():
+    abstract = abstract_from_inverted_index({"Adaptive": [0], "decoding": ["1"], "bad": ["x"]})
+
+    assert abstract == "Adaptive decoding"

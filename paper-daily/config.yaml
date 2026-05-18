@@ -135,6 +135,16 @@ sources:
       - TMLR
       - COLM
     max_results: 100
+  openalex:
+    enabled: false
+    lookback_days: 3
+    max_results: 100
+    per_page: 50
+    max_auto_queries: 5
+    search_queries: []
+    mailto: ""
+    api_key_env: OPENALEX_API_KEY
+    api_key: ""
 
 output:
   report_dir: reports
