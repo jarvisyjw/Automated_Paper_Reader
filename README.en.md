@@ -2,6 +2,10 @@
 
 > [中文](README.md) | English
 
+## 🖼️ Daily Report预览
+
+![Daily Report Preview](paper-daily/tutorial/daily%20report.png)
+
 CAPR is a lightweight workflow for building a customizable daily academic-paper reader with Codex.
 
 It separates the job into two parts:
@@ -11,7 +15,11 @@ It separates the job into two parts:
 
 The core principle is intentional: the Python scripts do not write the final literature review. They only prepare a high-quality candidate pool so Codex can act as the research assistant.
 
-## Features
+## 📰 News
+
+- 2026-05-18 ⚙️ Fixed the arXiv daily-fetch logic: CAPR now treats HTML recent-list announcement dates as the daily candidate-batch source, avoids misses from lagging abs/API dates, and writes a no-new-batch note instead of reusing older batches when the target date has no fresh or non-duplicate candidates.
+
+## ✨ Features
 
 - Fetch recent papers from arXiv and OpenReview.
 - Normalize metadata into a consistent JSON schema.
@@ -22,7 +30,7 @@ The core principle is intentional: the Python scripts do not write the final lit
 - Fall back to arXiv HTML recent-list pages when the arXiv export API is rate-limited.
 - Keep final scoring, reading, and report writing in Codex instead of a brittle keyword template.
 
-## Repository Layout
+## 🗂️ Repository Layout
 
 ```text
 Codex_Automated_Paper_Reader/
@@ -34,6 +42,9 @@ Codex_Automated_Paper_Reader/
 └── paper-daily/
     ├── config.yaml
     ├── requirements.txt
+    ├── tutorial/
+    │   ├── daily report.png
+    │   └── codex automation.png
     ├── scripts/
     │   ├── daily_papers.py
     │   ├── fetch_arxiv.py
@@ -52,16 +63,16 @@ paper-daily/logs/
 paper-daily/reports/
 ```
 
-## Quick Start
+## 🚀 Quick Start
 
-### 1. Clone the project
+### 📥 1. Clone the project
 
 ```bash
 git clone https://github.com/<your-user>/Codex_Automated_Paper_Reader.git
 cd Codex_Automated_Paper_Reader/paper-daily
 ```
 
-### 2. Create a Python environment
+### 🐍 2. Create a Python environment
 
 Python 3.10+ is recommended.
 
@@ -78,7 +89,7 @@ python -m venv .venv-win
 .\.venv-win\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-### 3. Fetch candidate papers
+### 🔎 3. Fetch candidate papers
 
 ```bash
 python scripts/daily_papers.py --config config.yaml --date today --stage fetch --force
@@ -101,7 +112,7 @@ the Top 10 report.
 For arXiv, CAPR prefers the HTML recent-list announcement date. If the target
 date has no new announcement batch, the workflow does not reuse an older batch.
 
-## Codex Automation
+## 🤖 Codex Automation
 
 CAPR is designed for Codex standalone automation.
 
@@ -125,7 +136,9 @@ cp ../Paper_Reader.template.en.txt ../Paper_Reader.txt
 
 The local `Paper_Reader.txt` file is ignored by Git because it usually contains machine-specific paths and private screening preferences. The public repository only includes the Chinese and English template files.
 
-## Candidate Schema
+![Codex Automation](paper-daily/tutorial/codex%20automation.png)
+
+## 🧾 Candidate Schema
 
 Each candidate in `data/processed/YYYY-MM-DD_candidates.json` roughly follows this shape:
 
@@ -152,7 +165,7 @@ Each candidate in `data/processed/YYYY-MM-DD_candidates.json` roughly follows th
 
 The retrieval scores are only hints. Codex should still read and score the papers semantically.
 
-## Recommended Codex Workflow
+## 📚 Recommended Codex Workflow
 
 After the fetch stage, Codex should:
 
@@ -163,7 +176,7 @@ After the fetch stage, Codex should:
 5. Write the final report to `reports/YYYY-MM-DD.md`.
 6. Clearly state whether each summary is based on abstract-only reading, paper-page reading, or PDF reading.
 
-## Configuration
+## ⚙️ Configuration
 
 Edit `paper-daily/config.yaml` to customize:
 
@@ -175,7 +188,7 @@ Edit `paper-daily/config.yaml` to customize:
 - arXiv retry and HTML fallback behavior
 - output directories
 
-### Proxy Behavior
+### 🌐 Proxy Behavior
 
 Some automation environments expose unusable loopback proxy variables.
 
@@ -185,7 +198,7 @@ CAPR ignores environment proxies by default for paper-source HTTP requests. If y
 PAPER_DAILY_USE_ENV_PROXY=1
 ```
 
-## Tests
+## ✅ Tests
 
 Run the test suite from `paper-daily`:
 
@@ -194,10 +207,10 @@ python -m pytest tests
 ```
 
 
-## Project Status
+## 📌 Project Status
 
 CAPR is an early research automation tool. The current focus is reliability, transparent candidate retrieval, and keeping the final literature review human/Codex-readable rather than template-generated.
 
-## License
+## 📄 License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE).
