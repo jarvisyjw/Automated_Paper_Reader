@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from fetch_arxiv import fetch_arxiv_html_recent
 from daily_papers import compare_with_previous_candidates, run_pipeline
-from utils import NetworkPreflightError, write_json_atomic
+from utils import NetworkPreflightError, network_preflight_urls, write_json_atomic
 
 
 def test_fetch_stage_generates_candidates_not_report(tmp_path):
@@ -179,6 +179,73 @@ retrieval:
     assert raw_payload["duplicate_check"]["status"] == "duplicate_of_previous"
 
 
+def test_fetch_stage_accepts_openalex_as_configured_source(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+research_profile:
+  positive_keywords:
+    - neural decoding
+  negative_keywords: []
+sources:
+  arxiv:
+    enabled: false
+  openreview:
+    enabled: false
+  openalex:
+    enabled: true
+    lookback_days: 3
+    max_results: 10
+    search_queries:
+      - neural decoding
+output:
+  report_dir: reports
+  data_dir: data
+  log_dir: logs
+retrieval:
+  candidate_limit: 10
+""",
+        encoding="utf-8",
+    )
+
+    def fake_fetch_openalex(source_config, research_profile, report_date, lookback, logger):
+        return [openalex_paper_fixture("W123", "Adaptive Neural Decoding")], []
+
+    monkeypatch.setattr("daily_papers.run_network_preflight", lambda *args, **kwargs: None)
+    monkeypatch.setattr("daily_papers.fetch_openalex", fake_fetch_openalex)
+
+    args = argparse.Namespace(
+        config=str(config_path),
+        date="2026-05-15",
+        stage="fetch",
+        lookback_days=None,
+        force=True,
+        sources=None,
+    )
+    result = run_pipeline(args)
+    raw_payload = json.loads((tmp_path / "data" / "raw" / "2026-05-15.json").read_text(encoding="utf-8"))
+    candidates = json.loads((tmp_path / "data" / "processed" / "2026-05-15_candidates.json").read_text())
+
+    assert result["source_counts"] == {"openalex": 1}
+    assert raw_payload["sources"] == ["openalex"]
+    assert candidates[0]["source"] == "openalex"
+
+
+def test_network_preflight_includes_openalex_when_enabled():
+    urls = network_preflight_urls(
+        {
+            "sources": {
+                "arxiv": {"enabled": False},
+                "openreview": {"enabled": False},
+                "openalex": {"enabled": True},
+            }
+        },
+        ["openalex"],
+    )
+
+    assert urls == ["https://api.openalex.org/"]
+
+
 def test_compare_with_previous_candidates_reports_changes(tmp_path):
     processed_dir = tmp_path / "processed"
     processed_dir.mkdir()
@@ -338,3 +405,17 @@ def paper_fixture(paper_id, title):
         "venue": "cs.LG",
         "categories": ["cs.LG"],
     }
+
+
+def openalex_paper_fixture(paper_id, title):
+    paper = paper_fixture(paper_id, title)
+    paper.update(
+        {
+            "source": "openalex",
+            "url": f"https://openalex.org/{paper_id}",
+            "pdf_url": "",
+            "venue": "OpenAlex Test Venue",
+            "categories": ["Brain-computer interface"],
+        }
+    )
+    return paper
