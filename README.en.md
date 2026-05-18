@@ -2,10 +2,6 @@
 
 > [中文](README.md) | English
 
-## 🖼️ Daily Report预览
-
-![Daily Report Preview](paper-daily/tutorial/daily%20report.png)
-
 CAPR is a lightweight workflow for building a customizable daily academic-paper reader with Codex.
 
 It separates the job into two parts:
@@ -15,10 +11,17 @@ It separates the job into two parts:
 
 The core principle is intentional: the Python scripts do not write the final literature review. They only prepare a high-quality candidate pool so Codex can act as the research assistant.
 
+
+## 🖼️ Daily Report预览
+
+![Daily Report Preview](paper-daily/tutorial/daily%20report.png)
+
+
+
 ## 📰 News
 
-- 2026-05-18 ✨ Added OpenAlex as an optional fetch source: it can run alongside arXiv / OpenReview when enabled, but remains off by default so the daily primary flow is unchanged.
-- 2026-05-18 ⚙️ Fixed the arXiv daily-fetch logic: CAPR now treats HTML recent-list announcement dates as the daily candidate-batch source, avoids misses from lagging abs/API dates, and writes a no-new-batch note instead of reusing older batches when the target date has no fresh or non-duplicate candidates.
+- **2026-05-18** ✨ Added OpenAlex as an optional fetch source: it can run alongside arXiv / OpenReview when enabled, but remains off by default so the daily primary flow is unchanged.
+- **2026-05-18** ⚙️ Fixed the arXiv daily-fetch logic: CAPR now treats HTML recent-list announcement dates as the daily candidate-batch source, avoids misses from lagging abs/API dates, and writes a no-new-batch note instead of reusing older batches when the target date has no fresh or non-duplicate candidates.
 
 ## ✨ Features
 
