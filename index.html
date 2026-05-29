@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAPR — Daily Paper Reports</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Codex Automated Paper Reader</h1>
+        <p class="subtitle">Daily Academic Paper Digest</p>
+    </header>
+    <main>
+        <section class="report-list" id="report-list">
+            <h2>Latest Reports</h2>
+            <div id="loading">Loading reports...</div>
+        </section>
+    </main>
+    <footer>
+        <p>Powered by <a href="https://github.com/anomalyco/opencode">CAPR</a> · Updates daily</p>
+    </footer>
+    <script>
+        (async () => {
+            const el = document.getElementById('loading');
+            try {
+                const res = await fetch('report-index.json');
+                if (!res.ok) throw new Error('No index');
+                const reports = await res.json();
+                if (!reports.length) {
+                    el.textContent = 'No reports yet. The daily workflow will populate this page.';
+                    return;
+                }
+                el.remove();
+                const list = document.getElementById('report-list');
+                reports.slice(0, 60).forEach(r => {
+                    const item = document.createElement('div');
+                    item.className = 'report-item';
+                    item.innerHTML = `
+                        <a href="reports/${r.file}">${r.title}</a>
+                        <span class="date">${r.date}</span>
+                        <span class="count">${r.count} papers</span>
+                    `;
+                    list.appendChild(item);
+                });
+            } catch {
+                el.textContent = 'Reports will appear here after the first daily run.';
+            }
+        })();
+    </script>
+</body>
+</html>
