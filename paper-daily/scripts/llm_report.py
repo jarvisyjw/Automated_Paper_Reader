@@ -28,6 +28,7 @@ from utils import (
     read_json,
     setup_logger,
     resolve_output_paths,
+    should_use_env_proxy,
 )
 
 DEFAULT_API_BASE = "https://api.openai.com/v1"
@@ -37,6 +38,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate LLM-scored paper report.")
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
     parser.add_argument("--date", default="today", help="'today' or YYYY-MM-DD")
+    parser.add_argument("--limit", type=int, default=None, help="Limit candidates sent to the LLM")
+    parser.add_argument(
+        "--timeout-seconds",
+        type=int,
+        default=None,
+        help="LLM request timeout; defaults to OPENAI_TIMEOUT_SECONDS or 120",
+    )
     return parser.parse_args()
 
 
@@ -52,6 +60,7 @@ def call_llm(
     system_prompt: str,
     user_prompt: str,
     temperature: float = 0.3,
+    timeout_seconds: int = 120,
 ) -> str:
     """Call the OpenAI-compatible chat completions endpoint and return the response text."""
     import requests as _requests
@@ -69,7 +78,9 @@ def call_llm(
         ],
         "temperature": temperature,
     }
-    resp = _requests.post(url, headers=headers, json=payload, timeout=120)
+    session = _requests.Session()
+    session.trust_env = should_use_env_proxy()
+    resp = session.post(url, headers=headers, json=payload, timeout=timeout_seconds)
     resp.raise_for_status()
     data = resp.json()
     return data["choices"][0]["message"]["content"]
@@ -170,11 +181,13 @@ def main() -> None:
 
     config = load_config(args.config)
     paths = resolve_output_paths(args.config, config)
-    logger = setup_logger(config, target_date)
+    log_path = paths["log_dir"] / f"{target_date}_llm.log"
+    logger = setup_logger(log_path)
 
     api_base = get_env("OPENAI_API_BASE", DEFAULT_API_BASE)
     api_key = get_env("OPENAI_API_KEY")
     model = get_env("OPENAI_MODEL_NAME", "gpt-4o")
+    timeout_seconds = args.timeout_seconds or int(get_env("OPENAI_TIMEOUT_SECONDS", "120") or "120")
 
     if not api_key:
         logger.error("OPENAI_API_KEY is not set. Aborting LLM report generation.")
@@ -185,13 +198,20 @@ def main() -> None:
         logger.error("Candidate file not found: %s. Run fetch stage first.", candidate_path)
         sys.exit(1)
 
-    candidates = read_json(str(candidate_path))
+    candidates = read_json(candidate_path)
     if not isinstance(candidates, list):
         logger.error("Candidate file is not a list: %s", candidate_path)
         sys.exit(1)
+    original_candidate_count = len(candidates)
+    if args.limit is not None:
+        if args.limit <= 0:
+            logger.error("--limit must be a positive integer.")
+            sys.exit(1)
+        candidates = candidates[: args.limit]
+        logger.info("Limited LLM input candidates from %d to %d.", original_candidate_count, len(candidates))
 
     raw_path = paths["raw_dir"] / f"{target_date}.json"
-    raw_data = read_json(str(raw_path)) if raw_path.exists() else {}
+    raw_data = read_json(raw_path) if raw_path.exists() else {}
 
     dup = raw_data.get("duplicate_check", {})
     rec_action = dup.get("recommended_action", raw_data.get("recommended_action", ""))
@@ -211,13 +231,13 @@ def main() -> None:
         }, logger)
         return
 
-    logger.info("Calling LLM API to score %d papers...", len(candidates))
+    logger.info("Calling LLM API to score %d papers with timeout=%ss...", len(candidates), timeout_seconds)
 
     system_prompt = build_system_prompt(config)
     user_prompt = build_user_prompt(candidates, str(target_date))
 
     try:
-        llm_output = call_llm(api_base, api_key, model, system_prompt, user_prompt)
+        llm_output = call_llm(api_base, api_key, model, system_prompt, user_prompt, timeout_seconds=timeout_seconds)
     except Exception as exc:
         logger.error("LLM API call failed: %s", exc)
         sys.exit(1)

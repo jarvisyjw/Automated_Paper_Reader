@@ -24,6 +24,7 @@ Thumbs.db
 .vscode/
 
 # Runtime outputs
+paper-daily/config.runtime.yaml
 paper-daily/logs/
 paper-daily/data/
 paper-daily/reports/
