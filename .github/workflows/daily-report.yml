@@ -70,10 +70,14 @@ jobs:
           fetch-depth: 0
 
       - name: Debug secrets
+        env:
+          DEBUG_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEBUG_BASE: ${{ secrets.OPENAI_API_BASE }}
+          DEBUG_MODEL: ${{ secrets.OPENAI_MODEL_NAME }}
         run: |
-          echo "KEY set: ${{ secrets.OPENAI_API_KEY != '' }}"
-          echo "BASE set: ${{ secrets.OPENAI_API_BASE != '' }}"
-          echo "MODEL set: ${{ secrets.OPENAI_MODEL_NAME != '' }}"
+          if [ -n "$DEBUG_KEY" ]; then echo "KEY is SET (length: ${#DEBUG_KEY})"; else echo "KEY is EMPTY or NOT SET"; fi
+          if [ -n "$DEBUG_BASE" ]; then echo "BASE is SET (length: ${#DEBUG_BASE})"; else echo "BASE is EMPTY or NOT SET"; fi
+          if [ -n "$DEBUG_MODEL" ]; then echo "MODEL is SET (length: ${#DEBUG_MODEL})"; else echo "MODEL is EMPTY or NOT SET"; fi
 
       # DISABLED FOR DEBUGGING — uncomment after secrets are verified
       # - name: Setup Python
