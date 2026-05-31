@@ -69,190 +69,197 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
+      - name: Debug secrets
         run: |
-          cd paper-daily
-          pip install -r requirements.txt
+          echo "KEY set: ${{ secrets.OPENAI_API_KEY != '' }}"
+          echo "BASE set: ${{ secrets.OPENAI_API_BASE != '' }}"
+          echo "MODEL set: ${{ secrets.OPENAI_MODEL_NAME != '' }}"
 
-      - name: Prepare runtime config
-        env:
-          POSITIVE_KEYWORDS: ${{ github.event.inputs.positive_keywords }}
-          NEGATIVE_KEYWORDS: ${{ github.event.inputs.negative_keywords }}
-          ARXIV_CATEGORIES: ${{ github.event.inputs.arxiv_categories }}
-          CANDIDATE_LIMIT: ${{ github.event.inputs.candidate_limit }}
-        run: |
-          cd paper-daily
-          python - <<'PY'
-          import os
-          import re
-          from pathlib import Path
-
-          import yaml
-
-          def split_values(value):
-              return [
-                  item.strip()
-                  for item in re.split(r"[\n,]+", value or "")
-                  if item.strip()
-              ]
-
-          config_path = Path("config.yaml")
-          config = yaml.safe_load(config_path.read_text()) or {}
-          profile = config.setdefault("research_profile", {})
-          retrieval = config.setdefault("retrieval", {})
-
-          positive_keywords = split_values(os.environ.get("POSITIVE_KEYWORDS"))
-          if positive_keywords:
-              profile["positive_keywords"] = positive_keywords
-
-          negative_keywords = split_values(os.environ.get("NEGATIVE_KEYWORDS"))
-          if negative_keywords:
-              profile["negative_keywords"] = negative_keywords
-
-          arxiv_categories = split_values(os.environ.get("ARXIV_CATEGORIES"))
-          if arxiv_categories:
-              profile["arxiv_categories"] = arxiv_categories
-
-          candidate_limit = (os.environ.get("CANDIDATE_LIMIT") or "").strip()
-          if candidate_limit:
-              retrieval["candidate_limit"] = int(candidate_limit)
-
-          Path("config.runtime.yaml").write_text(
-              yaml.safe_dump(config, sort_keys=False, allow_unicode=True),
-              encoding="utf-8",
-          )
-          PY
-
-      - name: Fetch candidates
-        env:
-          REPORT_DATE: ${{ github.event.inputs.date || 'today' }}
-        run: |
-          cd paper-daily
-          python scripts/daily_papers.py --config config.runtime.yaml --date "$REPORT_DATE" --stage fetch --force
-
-      - name: Generate LLM report
-        env:
-          OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          DEFAULT_OPENAI_MODEL_NAME: ${{ secrets.OPENAI_MODEL_NAME }}
-          MODEL_PRESET: ${{ github.event.inputs.model_preset || 'default-secret' }}
-          CUSTOM_MODEL_NAME: ${{ github.event.inputs.custom_model_name }}
-          OPENAI_TIMEOUT_SECONDS: ${{ github.event.inputs.timeout_seconds }}
-          REPORT_DATE: ${{ github.event.inputs.date || 'today' }}
-          LLM_LIMIT: ${{ github.event.inputs.llm_limit }}
-        run: |
-          cd paper-daily
-          if [ "$MODEL_PRESET" = "custom" ]; then
-            if [ -z "$CUSTOM_MODEL_NAME" ]; then
-              echo "custom_model_name is required when model_preset is custom."
-              exit 1
-            fi
-            export OPENAI_MODEL_NAME="$CUSTOM_MODEL_NAME"
-          elif [ "$MODEL_PRESET" = "default-secret" ] || [ -z "$MODEL_PRESET" ]; then
-            export OPENAI_MODEL_NAME="$DEFAULT_OPENAI_MODEL_NAME"
-          else
-            export OPENAI_MODEL_NAME="$MODEL_PRESET"
-          fi
-
-          args=(--config config.runtime.yaml --date "$REPORT_DATE")
-          if [ -n "$LLM_LIMIT" ]; then
-            args+=(--limit "$LLM_LIMIT")
-          fi
-          python scripts/llm_report.py "${args[@]}"
-
-      - name: Build Pages site
-        env:
-          REPORT_DATE_INPUT: ${{ github.event.inputs.date || 'today' }}
-        run: |
-          SCRIPT_DIR=$(cd paper-daily && pwd)
-          if [ "$REPORT_DATE_INPUT" = "today" ] || [ -z "$REPORT_DATE_INPUT" ]; then
-            DATE="$(date -u +%Y-%m-%d)"
-          else
-            DATE="$REPORT_DATE_INPUT"
-          fi
-          REPORT_FILE="reports/${DATE}.md"
-
-          mkdir -p docs/reports
-
-          if [ -f "paper-daily/${REPORT_FILE}" ]; then
-            cp "paper-daily/${REPORT_FILE}" "docs/reports/"
-
-            python3 - "${SCRIPT_DIR}" "${DATE}" << 'PYEOF'
-          import json, sys, os, glob
-          from pathlib import Path
-
-          script_dir = sys.argv[1]
-          today_str = sys.argv[2]
-
-          # Load existing index
-          idx_path = Path("docs/report-index.json")
-          index = json.loads(idx_path.read_text()) if idx_path.exists() else []
-
-          # Scan all reports in docs/reports/
-          existing_files = {r["file"] for r in index}
-          for f in sorted(Path("docs/reports").glob("*.md"), reverse=True):
-              if f.name not in existing_files:
-                  date_str = f.stem  # YYYY-MM-DD
-                  index.append({
-                      "date": date_str,
-                      "file": f.name,
-                      "title": f"AIPR Report — {date_str}",
-                      "count": "?",
-                  })
-
-          # Update today's entry with actual count if scored.json exists
-          scored_path = Path(script_dir) / "data" / "processed" / f"{today_str}_scored.json"
-          if scored_path.exists():
-              scored = json.loads(scored_path.read_text())
-              for r in index:
-                  if r["date"] == today_str:
-                      r["count"] = str(scored.get("candidate_count", "?"))
-                      r["title"] = f"AIPR Report — {today_str}"
-
-          # Sort by date descending, ensure unique by file
-          seen = set()
-          unique = []
-          for r in sorted(index, key=lambda x: x["date"], reverse=True):
-              if r["file"] not in seen:
-                  seen.add(r["file"])
-                  unique.append(r)
-
-          Path("docs/report-index.json").write_text(json.dumps(unique, indent=2))
-          PYEOF
-          fi
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
-      - name: Commit and push
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/
-          if git diff --staged --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "chore: daily report update [skip ci]"
-            git push
-          fi
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: docs/
-
-  deploy-pages:
-    needs: generate-report
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      # DISABLED FOR DEBUGGING — uncomment after secrets are verified
+      # - name: Setup Python
+      #   uses: actions/setup-python@v5
+      #   with:
+      #     python-version: "3.11"
+      #
+      # - name: Install dependencies
+      #   run: |
+      #     cd paper-daily
+      #     pip install -r requirements.txt
+      #
+      # - name: Prepare runtime config
+      #   env:
+      #     POSITIVE_KEYWORDS: ${{ github.event.inputs.positive_keywords }}
+      #     NEGATIVE_KEYWORDS: ${{ github.event.inputs.negative_keywords }}
+      #     ARXIV_CATEGORIES: ${{ github.event.inputs.arxiv_categories }}
+      #     CANDIDATE_LIMIT: ${{ github.event.inputs.candidate_limit }}
+      #   run: |
+      #     cd paper-daily
+      #     python - <<'PY'
+      #     import os
+      #     import re
+      #     from pathlib import Path
+      #
+      #     import yaml
+      #
+      #     def split_values(value):
+      #         return [
+      #             item.strip()
+      #             for item in re.split(r"[\n,]+", value or "")
+      #             if item.strip()
+      #         ]
+      #
+      #     config_path = Path("config.yaml")
+      #     config = yaml.safe_load(config_path.read_text()) or {}
+      #     profile = config.setdefault("research_profile", {})
+      #     retrieval = config.setdefault("retrieval", {})
+      #
+      #     positive_keywords = split_values(os.environ.get("POSITIVE_KEYWORDS"))
+      #     if positive_keywords:
+      #         profile["positive_keywords"] = positive_keywords
+      #
+      #     negative_keywords = split_values(os.environ.get("NEGATIVE_KEYWORDS"))
+      #     if negative_keywords:
+      #         profile["negative_keywords"] = negative_keywords
+      #
+      #     arxiv_categories = split_values(os.environ.get("ARXIV_CATEGORIES"))
+      #     if arxiv_categories:
+      #         profile["arxiv_categories"] = arxiv_categories
+      #
+      #     candidate_limit = (os.environ.get("CANDIDATE_LIMIT") or "").strip()
+      #     if candidate_limit:
+      #         retrieval["candidate_limit"] = int(candidate_limit)
+      #
+      #     Path("config.runtime.yaml").write_text(
+      #         yaml.safe_dump(config, sort_keys=False, allow_unicode=True),
+      #         encoding="utf-8",
+      #     )
+      #     PY
+      #
+      # - name: Fetch candidates
+      #   env:
+      #     REPORT_DATE: ${{ github.event.inputs.date || 'today' }}
+      #   run: |
+      #     cd paper-daily
+      #     python scripts/daily_papers.py --config config.runtime.yaml --date "$REPORT_DATE" --stage fetch --force
+      #
+      # - name: Generate LLM report
+      #   env:
+      #     OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
+      #     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      #     DEFAULT_OPENAI_MODEL_NAME: ${{ secrets.OPENAI_MODEL_NAME }}
+      #     MODEL_PRESET: ${{ github.event.inputs.model_preset || 'default-secret' }}
+      #     CUSTOM_MODEL_NAME: ${{ github.event.inputs.custom_model_name }}
+      #     OPENAI_TIMEOUT_SECONDS: ${{ github.event.inputs.timeout_seconds }}
+      #     REPORT_DATE: ${{ github.event.inputs.date || 'today' }}
+      #     LLM_LIMIT: ${{ github.event.inputs.llm_limit }}
+      #   run: |
+      #     cd paper-daily
+      #     if [ "$MODEL_PRESET" = "custom" ]; then
+      #       if [ -z "$CUSTOM_MODEL_NAME" ]; then
+      #         echo "custom_model_name is required when model_preset is custom."
+      #         exit 1
+      #       fi
+      #       export OPENAI_MODEL_NAME="$CUSTOM_MODEL_NAME"
+      #     elif [ "$MODEL_PRESET" = "default-secret" ] || [ -z "$MODEL_PRESET" ]; then
+      #       export OPENAI_MODEL_NAME="$DEFAULT_OPENAI_MODEL_NAME"
+      #     else
+      #       export OPENAI_MODEL_NAME="$MODEL_PRESET"
+      #     fi
+      #
+      #     args=(--config config.runtime.yaml --date "$REPORT_DATE")
+      #     if [ -n "$LLM_LIMIT" ]; then
+      #       args+=(--limit "$LLM_LIMIT")
+      #     fi
+      #     python scripts/llm_report.py "${args[@]}"
+      #
+      # - name: Build Pages site
+      #   env:
+      #     REPORT_DATE_INPUT: ${{ github.event.inputs.date || 'today' }}
+      #   run: |
+      #     SCRIPT_DIR=$(cd paper-daily && pwd)
+      #     if [ "$REPORT_DATE_INPUT" = "today" ] || [ -z "$REPORT_DATE_INPUT" ]; then
+      #       DATE="$(date -u +%Y-%m-%d)"
+      #     else
+      #       DATE="$REPORT_DATE_INPUT"
+      #     fi
+      #     REPORT_FILE="reports/${DATE}.md"
+      #
+      #     mkdir -p docs/reports
+      #
+      #     if [ -f "paper-daily/${REPORT_FILE}" ]; then
+      #       cp "paper-daily/${REPORT_FILE}" "docs/reports/"
+      #
+      #       python3 - "${SCRIPT_DIR}" "${DATE}" << 'PYEOF'
+      #     import json, sys, os, glob
+      #     from pathlib import Path
+      #
+      #     script_dir = sys.argv[1]
+      #     today_str = sys.argv[2]
+      #
+      #     # Load existing index
+      #     idx_path = Path("docs/report-index.json")
+      #     index = json.loads(idx_path.read_text()) if idx_path.exists() else []
+      #
+      #     # Scan all reports in docs/reports/
+      #     existing_files = {r["file"] for r in index}
+      #     for f in sorted(Path("docs/reports").glob("*.md"), reverse=True):
+      #         if f.name not in existing_files:
+      #             date_str = f.stem  # YYYY-MM-DD
+      #             index.append({
+      #                 "date": date_str,
+      #                 "file": f.name,
+      #                 "title": f"AIPR Report — {date_str}",
+      #                 "count": "?",
+      #             })
+      #
+      #     # Update today's entry with actual count if scored.json exists
+      #     scored_path = Path(script_dir) / "data" / "processed" / f"{today_str}_scored.json"
+      #     if scored_path.exists():
+      #         scored = json.loads(scored_path.read_text())
+      #         for r in index:
+      #             if r["date"] == today_str:
+      #                 r["count"] = str(scored.get("candidate_count", "?"))
+      #                 r["title"] = f"AIPR Report — {today_str}"
+      #
+      #     # Sort by date descending, ensure unique by file
+      #     seen = set()
+      #     unique = []
+      #     for r in sorted(index, key=lambda x: x["date"], reverse=True):
+      #         if r["file"] not in seen:
+      #             seen.add(r["file"])
+      #             unique.append(r)
+      #
+      #     Path("docs/report-index.json").write_text(json.dumps(unique, indent=2))
+      #     PYEOF
+      #     fi
+      #
+      # - name: Configure Pages
+      #   uses: actions/configure-pages@v5
+      #
+      # - name: Commit and push
+      #   run: |
+      #     git config user.name "github-actions[bot]"
+      #     git config user.email "github-actions[bot]@users.noreply.github.com"
+      #     git add docs/
+      #     if git diff --staged --quiet; then
+      #       echo "No changes to commit."
+      #     else
+      #       git commit -m "chore: daily report update [skip ci]"
+      #       git push
+      #     fi
+      #
+      # - name: Upload Pages artifact
+      #   uses: actions/upload-pages-artifact@v3
+      #   with:
+      #     path: docs/
+      #
+      # deploy-pages:
+      #   needs: generate-report
+      #   runs-on: ubuntu-latest
+      #   environment:
+      #     name: github-pages
+      #     url: ${{ steps.deployment.outputs.page_url }}
+      #   steps:
+      #     - name: Deploy to GitHub Pages
+      #       id: deployment
+      #       uses: actions/deploy-pages@v4
