@@ -219,3 +219,10 @@ CAPR is an early research automation tool. The current focus is reliability, tra
 ## 📄 License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE).
+
+
+```bash
+export OPENAI_API_KEY="sk-8e027a39d9f04cccbf0dc7ba3de51f4d" 
+export OPENAI_API_BASE="https://dashscope.aliyuncs.com/compatible-mode/v1"
+export OPENAI_MODEL_NAME="qwen3.7-max"
+```

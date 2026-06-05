@@ -121,16 +121,39 @@ strengths, limitations, relevance to the research profile, actionable idea,
 evidence level, and URL.
 """
 
+DEFAULT_PAPER_TEMPLATE = """For each selected top paper, include:
+- Motivation
+- Core technical idea
+- Method details
+- Experiments and evidence
+- Strengths
+- Limitations and risks
+- Relevance to the research profile
+- Actionable follow-up
+"""
+
+
+def resolve_config_path(config_path: str | Path, raw_path: str) -> Path:
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path
+    return Path(config_path).resolve().parent / path
+
 
 def resolve_report_template_path(config_path: str | Path, config: dict[str, Any]) -> Path | None:
     report_config = config.get("report", {})
     raw_path = str(report_config.get("template_path", "")).strip()
     if not raw_path:
         return None
-    path = Path(raw_path)
-    if path.is_absolute():
-        return path
-    return Path(config_path).resolve().parent / path
+    return resolve_config_path(config_path, raw_path)
+
+
+def resolve_paper_template_path(config_path: str | Path, config: dict[str, Any]) -> Path | None:
+    report_config = config.get("report", {})
+    raw_path = str(report_config.get("paper_template_path", "")).strip()
+    if not raw_path:
+        return None
+    return resolve_config_path(config_path, raw_path)
 
 
 def load_report_template(config_path: str | Path, config: dict[str, Any]) -> str:
@@ -142,7 +165,21 @@ def load_report_template(config_path: str | Path, config: dict[str, Any]) -> str
     return template_path.read_text(encoding="utf-8").strip()
 
 
-def build_user_prompt(candidates: list[dict[str, Any]], report_date: str, report_template: str) -> str:
+def load_paper_template(config_path: str | Path, config: dict[str, Any]) -> str:
+    template_path = resolve_paper_template_path(config_path, config)
+    if template_path is None:
+        return DEFAULT_PAPER_TEMPLATE
+    if not template_path.exists():
+        raise FileNotFoundError(f"Per-paper template not found: {template_path}")
+    return template_path.read_text(encoding="utf-8").strip()
+
+
+def build_user_prompt(
+    candidates: list[dict[str, Any]],
+    report_date: str,
+    report_template: str,
+    paper_template: str,
+) -> str:
     papers_text = []
     for i, p in enumerate(candidates, 1):
         papers_text.append(
@@ -164,6 +201,10 @@ def build_user_prompt(candidates: list[dict[str, Any]], report_date: str, report
         "----- BEGIN REPORT TEMPLATE -----\n"
         f"{report_template}\n"
         "----- END REPORT TEMPLATE -----\n\n"
+        "For each selected paper inside the report, follow this per-paper summary template:\n\n"
+        "----- BEGIN PER-PAPER TEMPLATE -----\n"
+        f"{paper_template}\n"
+        "----- END PER-PAPER TEMPLATE -----\n\n"
         "Respond with a JSON object matching this schema:\n"
         "{\n"
         '  "date": "...",\n'
@@ -270,12 +311,13 @@ def main() -> None:
 
     try:
         report_template = load_report_template(args.config, config)
+        paper_template = load_paper_template(args.config, config)
     except Exception as exc:
         logger.error("Failed to load report template: %s", exc)
         sys.exit(1)
 
     system_prompt = build_system_prompt(config)
-    user_prompt = build_user_prompt(candidates, str(target_date), report_template)
+    user_prompt = build_user_prompt(candidates, str(target_date), report_template, paper_template)
 
     try:
         llm_output = call_llm(api_base, api_key, model, system_prompt, user_prompt, timeout_seconds=timeout_seconds)

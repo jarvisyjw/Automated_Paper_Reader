@@ -201,3 +201,4 @@ retrieval:
 
 report:
   template_path: report.template.md
+  paper_template_path: paper-summary.template.md
