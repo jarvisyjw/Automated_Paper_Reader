@@ -1,80 +1,118 @@
 research_profile:
   language: en
   goal: >
-    Find general AI method papers that may inspire machine learning research,
-    time-series modeling, sequence modeling, multimodal learning, adaptation,
-    calibration, uncertainty modeling, and robust deployment.
+    Act as a research assistant for a researcher working on robotics and
+    autonomous driving, with a special focus on 3D vision and modeling the 3D
+    world through explicit and implicit representations. My previous research
+    includes SLAM, 3D reconstruction, 3D Gaussian representations,
+    vision-language navigation, visual localization, monocular depth
+    estimation, and robot navigation. My current priorities are feed-forward
+    3D reconstruction, global localization, and memory design for
+    vision-language navigation. I am also interested in world models,
+    multi-sensor calibration, visual place recognition, and loop closure
+    detection. I have strong experience in robust robot deployment and
+    autonomous driving deployment, so prioritize papers that are technically
+    novel, practically deployable, and likely to inspire reliable real-world
+    robotic or driving systems. When ranking papers, prefer work with clear 3D
+    geometry, spatial memory, localization, mapping, navigation, multi-sensor
+    perception, or world-modeling contributions over generic machine learning
+    papers.
   background_topics:
-    - machine learning
-    - representation learning
-    - time-series modeling
-    - multimodal learning
-    - uncertainty modeling
-    - calibration
-    - test-time adaptation
-    - continual learning
-    - domain adaptation
-    - distribution shift
+    - robotics
+    - autonomous driving
+    - 3D vision
+    - SLAM
+    - visual localization
+    - global localization
+    - visual place recognition
+    - loop closure detection
+    - 3D reconstruction
+    - feed-forward reconstruction
+    - 3D Gaussian representation
+    - implicit 3D representation
+    - explicit 3D representation
+    - monocular depth estimation
+    - visual-language navigation
+    - robot navigation
+    - memory design
+    - world model
+    - multi-sensor calibration
+    - robust robot deployment
+    - autonomous driving deployment
   positive_keywords:
-    - representation learning
-    - disentangled representation
-    - invariant representation
-    - equivariant representation
-    - contrastive learning
-    - self-supervised learning
-    - masked modeling
-    - masked autoencoder
-    - latent variable model
-    - prototype learning
-    - metric learning
-    - sequence modeling
-    - temporal modeling
-    - long-context modeling
-    - state space model
-    - recurrent model
-    - temporal attention
-    - alignment modeling
-    - CTC
-    - transducer
-    - sequence-to-sequence
-    - uncertainty estimation
-    - aleatoric uncertainty
-    - epistemic uncertainty
-    - calibration
-    - conformal prediction
-    - robust learning
-    - out-of-distribution
-    - noisy label learning
-    - confidence estimation
-    - online adaptation
+    - robotics
+    - autonomous driving
+    - embodied AI
+    - 3D vision
+    - 3D scene understanding
+    - 3D reconstruction
+    - feed-forward reconstruction
+    - feed-forward 3D reconstruction
+    - single-view reconstruction
+    - multi-view reconstruction
+    - sparse-view reconstruction
+    - neural reconstruction
+    - implicit representation
+    - explicit representation
+    - neural radiance field
+    - NeRF
+    - 3D Gaussian
+    - Gaussian splatting
+    - scene representation
+    - world model
+    - spatial memory
+    - memory design
+    - map memory
+    - topological memory
+    - semantic map
+    - occupancy map
+    - SLAM
+    - visual SLAM
+    - semantic SLAM
+    - robust SLAM
+    - visual localization
+    - global localization
+    - camera localization
+    - pose estimation
+    - relocalization
+    - visual place recognition
+    - loop closure
+    - loop closure detection
+    - monocular depth estimation
+    - metric depth
+    - depth completion
+    - scene flow
+    - multi-sensor calibration
+    - camera calibration
+    - LiDAR camera calibration
+    - sensor fusion
+    - multi-modal perception
+    - vision-language navigation
+    - VLN
+    - embodied navigation
+    - robot navigation
+    - long-horizon navigation
+    - navigation policy
+    - foundation model for robotics
+    - vision-language model
+    - multimodal large language model
+    - language model integration
+    - open-vocabulary perception
     - test-time adaptation
-    - continual learning
     - domain adaptation
     - domain generalization
     - distribution shift
-    - representation drift
-    - non-stationary learning
-    - language model integration
-    - retrieval-augmented generation
-    - reranking
-    - sequence scoring
-    - decoding strategy
-    - preference optimization
-    - weak supervision
-    - posterior inference
-    - self-training
-    - pseudo-labeling
-    - diffusion model
-    - multimodal alignment
-    - cross-modal representation learning
-    - attention mechanism
-    - tokenization
-    - spatiotemporal modeling
-    - time series
-    - irregular time series
-    - foundation model
-    - scientific machine learning
-    - language model
+    - uncertainty estimation
+    - calibration
+    - robust deployment
+    - real-world deployment
+    - sim-to-real
+    - autonomous driving perception
+    - BEV perception
+    - HD map
+    - online mapping
+    - trajectory prediction
+    - planning
   negative_keywords:
     - protein folding
     - recommender system
@@ -83,35 +121,43 @@ research_profile:
     - vulnerability fixing
     - tutoring system
     - financial forecasting
+    - medical imaging
+    - drug discovery
+    - molecule generation
+    - stock prediction
+    - social network
+    - advertising
+    - e-commerce
+    - theorem proving
+    - code generation
+    - cybersecurity
   arxiv_categories:
-    - cs.LG
-    - cs.AI
-    - cs.CL
+    - cs.RO
     - cs.CV
+    - cs.AI
     - cs.MM
-    - cs.IR
-    - cs.SD
-    - cs.NE
-    - eess.SP
-    - stat.ML
+    - cs.LG
+    - cs.CL
   preferred_venues:
+    - IROS
+    - ICRA
+    - CORL
+    - RSS
+    - RAL
+    - TRO
+    - TPAMI
+    - IJRR
+    - TIP
+    - RAL
+    - TASE
     - NeurIPS
     - ICML
     - ICLR
     - CVPR
     - ICCV
     - ECCV
-    - ACL
-    - EMNLP
-    - NAACL
-    - COLM
-    - TMLR
     - AAAI
     - IJCAI
-    - KDD
-    - WWW
-    - TheWebConf
-    - SIGIR
 
 sources:
   arxiv:
@@ -152,3 +198,6 @@ output:
 
 retrieval:
   candidate_limit: 100
+
+report:
+  template_path: report.template.md

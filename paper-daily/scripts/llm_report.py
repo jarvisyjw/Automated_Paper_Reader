@@ -109,7 +109,40 @@ Reading evidence values: "abstract-only", "paper page", or "pdf"
 Output ONLY valid JSON with no markdown code fence. Do not wrap the JSON in triple backticks."""
 
 
-def build_user_prompt(candidates: list[dict[str, Any]], report_date: str) -> str:
+DEFAULT_REPORT_TEMPLATE = """Write a Markdown report with sections:
+- Overview
+- Top 10 Papers
+- Trends of the day
+- Potential research ideas
+- Papers worth adding to related work
+
+For each selected top paper, include motivation, core idea, experiments,
+strengths, limitations, relevance to the research profile, actionable idea,
+evidence level, and URL.
+"""
+
+
+def resolve_report_template_path(config_path: str | Path, config: dict[str, Any]) -> Path | None:
+    report_config = config.get("report", {})
+    raw_path = str(report_config.get("template_path", "")).strip()
+    if not raw_path:
+        return None
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path
+    return Path(config_path).resolve().parent / path
+
+
+def load_report_template(config_path: str | Path, config: dict[str, Any]) -> str:
+    template_path = resolve_report_template_path(config_path, config)
+    if template_path is None:
+        return DEFAULT_REPORT_TEMPLATE
+    if not template_path.exists():
+        raise FileNotFoundError(f"Report template not found: {template_path}")
+    return template_path.read_text(encoding="utf-8").strip()
+
+
+def build_user_prompt(candidates: list[dict[str, Any]], report_date: str, report_template: str) -> str:
     papers_text = []
     for i, p in enumerate(candidates, 1):
         papers_text.append(
@@ -127,8 +160,10 @@ def build_user_prompt(candidates: list[dict[str, Any]], report_date: str) -> str
         "Select the top 10 papers and score ALL papers. For each paper provide "
         "semantic_scores, selected_for_deep_read (true if selected for deeper reading), "
         "selected_for_top10 (true if in top 10), reading_evidence, and semantic_rank.\n\n"
-        "Then write a Markdown report with sections: Overview, Top 10 Papers, "
-        "Trends of the day, Potential research ideas, Papers worth adding to related work.\n\n"
+        "Then write the Markdown report according to this report template:\n\n"
+        "----- BEGIN REPORT TEMPLATE -----\n"
+        f"{report_template}\n"
+        "----- END REPORT TEMPLATE -----\n\n"
         "Respond with a JSON object matching this schema:\n"
         "{\n"
         '  "date": "...",\n'
@@ -233,8 +268,14 @@ def main() -> None:
 
     logger.info("Calling LLM API to score %d papers with timeout=%ss...", len(candidates), timeout_seconds)
 
+    try:
+        report_template = load_report_template(args.config, config)
+    except Exception as exc:
+        logger.error("Failed to load report template: %s", exc)
+        sys.exit(1)
+
     system_prompt = build_system_prompt(config)
-    user_prompt = build_user_prompt(candidates, str(target_date))
+    user_prompt = build_user_prompt(candidates, str(target_date), report_template)
 
     try:
         llm_output = call_llm(api_base, api_key, model, system_prompt, user_prompt, timeout_seconds=timeout_seconds)
