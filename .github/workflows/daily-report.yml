@@ -45,10 +45,12 @@ on:
       llm_limit:
         description: "Limit candidates sent to LLM; useful for test runs"
         required: false
+        default: "20"
         type: string
       timeout_seconds:
         description: "LLM request timeout in seconds"
         required: false
+        default: "1800"
         type: string
 
 permissions:
@@ -142,9 +144,9 @@ jobs:
           DEFAULT_OPENAI_MODEL_NAME: ${{ secrets.OPENAI_MODEL_NAME }}
           MODEL_PRESET: ${{ github.event.inputs.model_preset || 'default-secret' }}
           CUSTOM_MODEL_NAME: ${{ github.event.inputs.custom_model_name }}
-          OPENAI_TIMEOUT_SECONDS: ${{ github.event.inputs.timeout_seconds }}
+          OPENAI_TIMEOUT_SECONDS: ${{ github.event.inputs.timeout_seconds || '1800' }}
           REPORT_DATE: ${{ github.event.inputs.date || 'today' }}
-          LLM_LIMIT: ${{ github.event.inputs.llm_limit }}
+          LLM_LIMIT: ${{ github.event.inputs.llm_limit || '20' }}
         run: |
           cd paper-daily
           if [ "$MODEL_PRESET" = "custom" ]; then

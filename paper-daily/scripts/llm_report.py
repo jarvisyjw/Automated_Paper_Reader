@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import sys
+from io import BytesIO
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -32,18 +33,25 @@ from utils import (
 )
 
 DEFAULT_API_BASE = "https://api.openai.com/v1"
+DEFAULT_LLM_LIMIT = 20
+DEFAULT_TIMEOUT_SECONDS = 1800
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate LLM-scored paper report.")
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
     parser.add_argument("--date", default="today", help="'today' or YYYY-MM-DD")
-    parser.add_argument("--limit", type=int, default=None, help="Limit candidates sent to the LLM")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Limit candidates sent to the LLM; defaults to OPENAI_LLM_LIMIT or 20",
+    )
     parser.add_argument(
         "--timeout-seconds",
         type=int,
         default=None,
-        help="LLM request timeout; defaults to OPENAI_TIMEOUT_SECONDS or 120",
+        help="LLM request timeout; defaults to OPENAI_TIMEOUT_SECONDS or 1800",
     )
     return parser.parse_args()
 
@@ -60,7 +68,7 @@ def call_llm(
     system_prompt: str,
     user_prompt: str,
     temperature: float = 0.3,
-    timeout_seconds: int = 120,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
 ) -> str:
     """Call the OpenAI-compatible chat completions endpoint and return the response text."""
     import requests as _requests
@@ -105,6 +113,7 @@ Scoring dimensions (each 0-5):
 Formula: final_score = 0.25*methodological_relevance + 0.25*inspiration_value + 0.20*transferability_to_my_research + 0.15*paper_quality + 0.10*novelty_timeliness + 0.05*actionability
 
 Reading evidence values: "abstract-only", "paper page", or "pdf"
+Use reading_evidence="pdf" only when PDF text evidence is provided for that paper.
 
 Output ONLY valid JSON with no markdown code fence. Do not wrap the JSON in triple backticks."""
 
@@ -174,6 +183,104 @@ def load_paper_template(config_path: str | Path, config: dict[str, Any]) -> str:
     return template_path.read_text(encoding="utf-8").strip()
 
 
+def pdf_reading_config(config: dict[str, Any]) -> dict[str, Any]:
+    pdf_config = config.get("report", {}).get("pdf_reading", {})
+    return {
+        "enabled": bool(pdf_config.get("enabled", False)),
+        "max_papers": int(pdf_config.get("max_papers", DEFAULT_LLM_LIMIT)),
+        "max_pages": int(pdf_config.get("max_pages", 8)),
+        "max_chars_per_paper": int(pdf_config.get("max_chars_per_paper", 10000)),
+        "request_timeout_seconds": int(pdf_config.get("request_timeout_seconds", 60)),
+    }
+
+
+def extract_pdf_text(pdf_bytes: bytes, max_pages: int, max_chars: int) -> str:
+    from pypdf import PdfReader
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    chunks: list[str] = []
+    for page in reader.pages[:max_pages]:
+        text = page.extract_text() or ""
+        if text.strip():
+            chunks.append(text)
+        current = normalize_prompt_text("\n\n".join(chunks))
+        if len(current) >= max_chars:
+            return current[:max_chars]
+    return normalize_prompt_text("\n\n".join(chunks))[:max_chars]
+
+
+def normalize_prompt_text(text: str) -> str:
+    return " ".join(text.split())
+
+
+def fetch_pdf_bytes(pdf_url: str, timeout_seconds: int) -> bytes:
+    import requests as _requests
+
+    session = _requests.Session()
+    session.trust_env = should_use_env_proxy()
+    response = session.get(pdf_url, timeout=timeout_seconds, headers={"User-Agent": "paper-daily-llm/0.1"})
+    response.raise_for_status()
+    return response.content
+
+
+def enrich_candidates_with_pdf_text(
+    candidates: list[dict[str, Any]],
+    config: dict[str, Any],
+    logger: logging.Logger,
+) -> list[dict[str, Any]]:
+    pdf_config = pdf_reading_config(config)
+    if not pdf_config["enabled"]:
+        logger.info("PDF reading disabled.")
+        return candidates
+
+    max_papers = max(0, int(pdf_config["max_papers"]))
+    if max_papers <= 0:
+        logger.info("PDF reading skipped because max_papers <= 0.")
+        return candidates
+
+    enriched: list[dict[str, Any]] = []
+    logger.info(
+        "Reading PDF text for up to %d papers, max_pages=%d, max_chars_per_paper=%d.",
+        max_papers,
+        pdf_config["max_pages"],
+        pdf_config["max_chars_per_paper"],
+    )
+    for idx, paper in enumerate(candidates):
+        updated = dict(paper)
+        if idx >= max_papers:
+            enriched.append(updated)
+            continue
+
+        pdf_url = str(updated.get("pdf_url") or "").strip()
+        if not pdf_url:
+            updated["_pdf_read_warning"] = "No PDF URL available."
+            enriched.append(updated)
+            continue
+
+        try:
+            pdf_bytes = fetch_pdf_bytes(pdf_url, int(pdf_config["request_timeout_seconds"]))
+            pdf_text = extract_pdf_text(
+                pdf_bytes,
+                max_pages=int(pdf_config["max_pages"]),
+                max_chars=int(pdf_config["max_chars_per_paper"]),
+            )
+            if pdf_text:
+                updated["_pdf_text_excerpt"] = pdf_text
+                updated["_reading_evidence_hint"] = "pdf"
+                logger.info("Extracted PDF text for %s (%d chars).", updated.get("id", pdf_url), len(pdf_text))
+            else:
+                updated["_pdf_read_warning"] = "PDF downloaded, but no extractable text was found."
+        except Exception as exc:
+            updated["_pdf_read_warning"] = f"PDF read failed: {exc}"
+            logger.warning("PDF read failed for %s: %s", updated.get("id", pdf_url), exc)
+        enriched.append(updated)
+    return enriched
+
+
+def strip_prompt_only_fields(paper: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in paper.items() if not key.startswith("_pdf_") and key != "_reading_evidence_hint"}
+
+
 def build_user_prompt(
     candidates: list[dict[str, Any]],
     report_date: str,
@@ -190,13 +297,17 @@ def build_user_prompt(
             f"**URL:** {p.get('url', '')}\n"
             f"**Categories:** {', '.join(p.get('categories', []))}\n"
             f"**Keyword matches:** {', '.join(p.get('matched_keywords', []))}\n"
-            f"**Retrieval reason:** {p.get('retrieval_reason', '')}"
+            f"**Retrieval reason:** {p.get('retrieval_reason', '')}\n"
+            f"**Reading evidence hint:** {p.get('_reading_evidence_hint', 'abstract-only')}\n"
+            f"**PDF read warning:** {p.get('_pdf_read_warning', '')}\n"
+            f"**PDF text excerpt:** {p.get('_pdf_text_excerpt', '')}"
         )
     return (
         f"Score the following {len(candidates)} papers for the date {report_date}.\n\n"
         "Select the top 10 papers and score ALL papers. For each paper provide "
         "semantic_scores, selected_for_deep_read (true if selected for deeper reading), "
-        "selected_for_top10 (true if in top 10), reading_evidence, and semantic_rank.\n\n"
+        "selected_for_top10 (true if in top 10), reading_evidence, and semantic_rank. "
+        "Set reading_evidence to pdf when a PDF text excerpt is present; otherwise use abstract-only.\n\n"
         "Then write the Markdown report according to this report template:\n\n"
         "----- BEGIN REPORT TEMPLATE -----\n"
         f"{report_template}\n"
@@ -263,7 +374,9 @@ def main() -> None:
     api_base = get_env("OPENAI_API_BASE", DEFAULT_API_BASE)
     api_key = get_env("OPENAI_API_KEY")
     model = get_env("OPENAI_MODEL_NAME", "gpt-4o")
-    timeout_seconds = args.timeout_seconds or int(get_env("OPENAI_TIMEOUT_SECONDS", "120") or "120")
+    timeout_seconds = args.timeout_seconds or int(
+        get_env("OPENAI_TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT_SECONDS)) or str(DEFAULT_TIMEOUT_SECONDS)
+    )
 
     if not api_key:
         logger.error("OPENAI_API_KEY is not set. Aborting LLM report generation.")
@@ -279,11 +392,14 @@ def main() -> None:
         logger.error("Candidate file is not a list: %s", candidate_path)
         sys.exit(1)
     original_candidate_count = len(candidates)
-    if args.limit is not None:
-        if args.limit <= 0:
-            logger.error("--limit must be a positive integer.")
-            sys.exit(1)
-        candidates = candidates[: args.limit]
+    llm_limit = args.limit
+    if llm_limit is None:
+        llm_limit = int(get_env("OPENAI_LLM_LIMIT", str(DEFAULT_LLM_LIMIT)) or str(DEFAULT_LLM_LIMIT))
+    if llm_limit <= 0:
+        logger.error("--limit/OPENAI_LLM_LIMIT must be a positive integer.")
+        sys.exit(1)
+    if len(candidates) > llm_limit:
+        candidates = candidates[:llm_limit]
         logger.info("Limited LLM input candidates from %d to %d.", original_candidate_count, len(candidates))
 
     raw_path = paths["raw_dir"] / f"{target_date}.json"
@@ -316,8 +432,10 @@ def main() -> None:
         logger.error("Failed to load report template: %s", exc)
         sys.exit(1)
 
+    candidates_for_prompt = enrich_candidates_with_pdf_text(candidates, config, logger)
+
     system_prompt = build_system_prompt(config)
-    user_prompt = build_user_prompt(candidates, str(target_date), report_template, paper_template)
+    user_prompt = build_user_prompt(candidates_for_prompt, str(target_date), report_template, paper_template)
 
     try:
         llm_output = call_llm(api_base, api_key, model, system_prompt, user_prompt, timeout_seconds=timeout_seconds)
@@ -346,7 +464,7 @@ def main() -> None:
     report_markdown = result.get("report_markdown", "# Daily Report\n\nNo report content generated.")
 
     scored_candidates = []
-    candidate_by_id = {p.get("id"): p for p in candidates}
+    candidate_by_id = {p.get("id"): strip_prompt_only_fields(p) for p in candidates}
 
     for scored in papers_out:
         paper_id = scored.get("id", "")

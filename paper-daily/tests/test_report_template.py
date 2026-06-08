@@ -2,7 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from scripts.llm_report import build_user_prompt, load_paper_template, load_report_template
+from scripts.llm_report import (
+    build_user_prompt,
+    load_paper_template,
+    load_report_template,
+    pdf_reading_config,
+    strip_prompt_only_fields,
+)
 
 
 def test_load_report_template_relative_to_config(tmp_path: Path) -> None:
@@ -86,3 +92,48 @@ def test_build_user_prompt_includes_template() -> None:
     assert "## Custom Section" in prompt
     assert "## Per Paper" in prompt
     assert "Example Paper" in prompt
+
+
+def test_build_user_prompt_includes_pdf_evidence() -> None:
+    prompt = build_user_prompt(
+        [
+            {
+                "title": "PDF Paper",
+                "authors": [],
+                "abstract": "Short abstract.",
+                "url": "https://example.com",
+                "categories": [],
+                "matched_keywords": [],
+                "retrieval_reason": "test",
+                "_reading_evidence_hint": "pdf",
+                "_pdf_text_excerpt": "This is extracted full-text evidence from the PDF.",
+            }
+        ],
+        "2026-06-08",
+        "report template",
+        "paper template",
+    )
+
+    assert "Reading evidence hint:** pdf" in prompt
+    assert "This is extracted full-text evidence from the PDF." in prompt
+
+
+def test_pdf_reading_config_defaults_to_disabled() -> None:
+    config = pdf_reading_config({})
+
+    assert config["enabled"] is False
+    assert config["max_papers"] == 20
+
+
+def test_strip_prompt_only_fields_removes_pdf_text() -> None:
+    paper = {
+        "id": "paper-1",
+        "title": "Keep me",
+        "_pdf_text_excerpt": "large text",
+        "_pdf_read_warning": "warning",
+        "_reading_evidence_hint": "pdf",
+    }
+
+    stripped = strip_prompt_only_fields(paper)
+
+    assert stripped == {"id": "paper-1", "title": "Keep me"}

@@ -202,3 +202,9 @@ retrieval:
 report:
   template_path: report.template.md
   paper_template_path: paper-summary.template.md
+  pdf_reading:
+    enabled: true
+    max_papers: 20
+    max_pages: 8
+    max_chars_per_paper: 10000
+    request_timeout_seconds: 60
