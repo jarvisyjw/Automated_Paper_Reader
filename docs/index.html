@@ -37,7 +37,7 @@
                     const item = document.createElement('div');
                     item.className = 'report-item';
                     item.innerHTML = `
-                        <a href="reports/${r.file}">${r.title}</a>
+                        <a href="report.html?file=reports/${encodeURIComponent(r.file)}">${r.title}</a>
                         <span class="date">${r.date}</span>
                         <span class="count">${r.count} papers</span>
                     `;
