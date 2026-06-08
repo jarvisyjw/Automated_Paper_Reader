@@ -201,6 +201,7 @@ def pdf_reading_config(config: dict[str, Any]) -> dict[str, Any]:
         "max_papers": int(pdf_config.get("max_papers", DEFAULT_LLM_LIMIT)),
         "max_pages": int(pdf_config.get("max_pages", 8)),
         "max_chars_per_paper": int(pdf_config.get("max_chars_per_paper", 10000)),
+        "max_total_chars": int(pdf_config.get("max_total_chars", 90000)),
         "request_timeout_seconds": int(pdf_config.get("request_timeout_seconds", 60)),
     }
 
@@ -258,15 +259,21 @@ def enrich_candidates_with_pdf_text(
         return candidates
 
     enriched: list[dict[str, Any]] = []
+    remaining_total_chars = max(0, int(pdf_config["max_total_chars"]))
     logger.info(
-        "Reading PDF text for up to %d papers, max_pages=%d, max_chars_per_paper=%d.",
+        "Reading PDF text for up to %d papers, max_pages=%d, max_chars_per_paper=%d, max_total_chars=%d.",
         max_papers,
         pdf_config["max_pages"],
         pdf_config["max_chars_per_paper"],
+        remaining_total_chars,
     )
     for idx, paper in enumerate(candidates):
         updated = dict(paper)
         if idx >= max_papers:
+            enriched.append(updated)
+            continue
+        if remaining_total_chars <= 0:
+            updated["_pdf_read_warning"] = "Skipped because total PDF text budget was exhausted."
             enriched.append(updated)
             continue
 
@@ -278,14 +285,16 @@ def enrich_candidates_with_pdf_text(
 
         try:
             pdf_bytes = fetch_pdf_bytes(pdf_url, int(pdf_config["request_timeout_seconds"]))
+            max_chars_for_this_paper = min(int(pdf_config["max_chars_per_paper"]), remaining_total_chars)
             pdf_text = extract_pdf_text(
                 pdf_bytes,
                 max_pages=int(pdf_config["max_pages"]),
-                max_chars=int(pdf_config["max_chars_per_paper"]),
+                max_chars=max_chars_for_this_paper,
             )
             if pdf_text:
                 updated["_pdf_text_excerpt"] = pdf_text
                 updated["_reading_evidence_hint"] = "pdf"
+                remaining_total_chars -= len(pdf_text)
                 logger.info("Extracted PDF text for %s (%d chars).", updated.get("id", pdf_url), len(pdf_text))
             else:
                 updated["_pdf_read_warning"] = "PDF downloaded, but no extractable text was found."

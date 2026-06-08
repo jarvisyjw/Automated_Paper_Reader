@@ -125,6 +125,7 @@ def test_pdf_reading_config_defaults_to_disabled() -> None:
 
     assert config["enabled"] is False
     assert config["max_papers"] == 20
+    assert config["max_total_chars"] == 90000
 
 
 def test_strip_prompt_only_fields_removes_pdf_text() -> None:

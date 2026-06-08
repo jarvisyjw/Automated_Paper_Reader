@@ -205,8 +205,9 @@ report:
   pdf_reading:
     enabled: true
     max_papers: 20
-    max_pages: 8
-    max_chars_per_paper: 10000
+    max_pages: 12
+    max_chars_per_paper: 18000
+    max_total_chars: 90000
     request_timeout_seconds: 60
   translation:
     enabled: true
