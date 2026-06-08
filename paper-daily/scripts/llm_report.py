@@ -287,6 +287,7 @@ def build_user_prompt(
     report_template: str,
     paper_template: str,
 ) -> str:
+    rendered_report_template = report_template.replace("{report_date}", report_date)
     papers_text = []
     for i, p in enumerate(candidates, 1):
         papers_text.append(
@@ -310,7 +311,7 @@ def build_user_prompt(
         "Set reading_evidence to pdf when a PDF text excerpt is present; otherwise use abstract-only.\n\n"
         "Then write the Markdown report according to this report template:\n\n"
         "----- BEGIN REPORT TEMPLATE -----\n"
-        f"{report_template}\n"
+        f"{rendered_report_template}\n"
         "----- END REPORT TEMPLATE -----\n\n"
         "For each selected paper inside the report, follow this per-paper summary template:\n\n"
         "----- BEGIN PER-PAPER TEMPLATE -----\n"

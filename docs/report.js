@@ -79,7 +79,7 @@ function renderMarkdown(markdown) {
 
 function reportTitleFromFile(file) {
     const name = file.split('/').pop().replace(/\.md$/i, '');
-    return `AIPR Report - ${name}`;
+    return `${name}_report`;
 }
 
 (async () => {
@@ -89,7 +89,8 @@ function reportTitleFromFile(file) {
         return;
     }
 
-    titleEl.textContent = reportTitleFromFile(reportFile);
+    const pageTitle = reportTitleFromFile(reportFile);
+    titleEl.textContent = pageTitle;
     metaEl.textContent = reportFile;
 
     try {
@@ -98,7 +99,9 @@ function reportTitleFromFile(file) {
         const markdown = await response.text();
         contentEl.innerHTML = renderMarkdown(markdown);
         const firstHeading = contentEl.querySelector('h1');
-        if (firstHeading) titleEl.textContent = firstHeading.textContent;
+        if (firstHeading && /^Daily Paper Report( Template)?$/i.test(firstHeading.textContent.trim())) {
+            firstHeading.textContent = pageTitle;
+        }
     } catch (error) {
         metaEl.textContent = 'Could not load report.';
         contentEl.innerHTML = `<p>${escapeHtml(error.message)}</p>`;

@@ -202,7 +202,7 @@ jobs:
                   index.append({
                       "date": date_str,
                       "file": f.name,
-                      "title": f"AIPR Report - {date_str}",
+                      "title": f"{date_str}_report",
                       "count": "?",
                   })
 
@@ -212,7 +212,7 @@ jobs:
               for r in index:
                   if r["date"] == today_str:
                       r["count"] = str(scored.get("candidate_count", "?"))
-                      r["title"] = f"AIPR Report - {today_str}"
+                      r["title"] = f"{today_str}_report"
 
           seen = set()
           unique = []

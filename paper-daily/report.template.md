@@ -1,6 +1,7 @@
-# Daily Paper Report Template
+# {report_date}_report
 
-Write the final report in Markdown using the structure below.
+Write the final report in Markdown using the structure below. Use the title
+above exactly, replacing `{report_date}` with the target report date.
 
 ## Overview
 
