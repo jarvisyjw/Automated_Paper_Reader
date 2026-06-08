@@ -94,6 +94,17 @@ def call_llm(
     return data["choices"][0]["message"]["content"]
 
 
+def strip_markdown_fence(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        first_newline = text.find("\n")
+        if first_newline != -1:
+            text = text[first_newline + 1:]
+        if text.endswith("```"):
+            text = text[:-3]
+    return text.strip()
+
+
 def build_system_prompt(config: dict[str, Any]) -> str:
     research = config.get("research_profile", {})
     return f"""You are a research assistant. Score academic papers and write a daily literature report.
@@ -194,6 +205,14 @@ def pdf_reading_config(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def translation_config(config: dict[str, Any]) -> dict[str, Any]:
+    translation = config.get("report", {}).get("translation", {})
+    return {
+        "enabled": bool(translation.get("enabled", False)),
+        "target_language": str(translation.get("target_language", "zh-CN")),
+    }
+
+
 def extract_pdf_text(pdf_bytes: bytes, max_pages: int, max_chars: int) -> str:
     from pypdf import PdfReader
 
@@ -279,6 +298,39 @@ def enrich_candidates_with_pdf_text(
 
 def strip_prompt_only_fields(paper: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in paper.items() if not key.startswith("_pdf_") and key != "_reading_evidence_hint"}
+
+
+def translate_report_markdown(
+    report_markdown: str,
+    api_base: str,
+    api_key: str,
+    model: str,
+    target_language: str,
+    timeout_seconds: int,
+) -> str:
+    system_prompt = (
+        "You are a careful academic translator. Translate Markdown reports while preserving "
+        "all Markdown structure, heading levels, bullet structure, URLs, arXiv IDs, code spans, "
+        "numbers, equations, model names, paper titles, and citation-like strings unless a natural "
+        "Chinese translation is clearly appropriate. Return only the translated Markdown."
+    )
+    user_prompt = (
+        f"Translate the following Markdown report into {target_language}. "
+        "Keep the report title format, links, and all Markdown formatting intact.\n\n"
+        "----- BEGIN MARKDOWN -----\n"
+        f"{report_markdown}\n"
+        "----- END MARKDOWN -----"
+    )
+    translated = call_llm(
+        api_base,
+        api_key,
+        model,
+        system_prompt,
+        user_prompt,
+        temperature=0.1,
+        timeout_seconds=timeout_seconds,
+    )
+    return strip_markdown_fence(translated)
 
 
 def build_user_prompt(
@@ -444,15 +496,7 @@ def main() -> None:
         logger.error("LLM API call failed: %s", exc)
         sys.exit(1)
 
-    llm_output = llm_output.strip()
-    # Strip markdown code fences if LLM wraps the JSON in ```json ... ```
-    if llm_output.startswith("```"):
-        first_newline = llm_output.find("\n")
-        if first_newline != -1:
-            llm_output = llm_output[first_newline + 1:]
-        if llm_output.endswith("```"):
-            llm_output = llm_output[:-3]
-        llm_output = llm_output.strip()
+    llm_output = strip_markdown_fence(llm_output)
 
     try:
         result = json.loads(llm_output)
@@ -495,10 +539,33 @@ def main() -> None:
     report_path.write_text(report_markdown, encoding="utf-8")
     logger.info("Saved report to %s", report_path)
 
+    translation = translation_config(config)
+    translated_path: Path | None = None
+    if translation["enabled"]:
+        logger.info("Translating report to %s...", translation["target_language"])
+        try:
+            translated_markdown = translate_report_markdown(
+                report_markdown,
+                api_base,
+                api_key,
+                model,
+                translation["target_language"],
+                timeout_seconds,
+            )
+        except Exception as exc:
+            logger.error("Report translation failed: %s", exc)
+            sys.exit(1)
+        translated_path = paths["report_dir"] / "zh" / f"{target_date}.md"
+        translated_path.parent.mkdir(parents=True, exist_ok=True)
+        translated_path.write_text(translated_markdown, encoding="utf-8")
+        logger.info("Saved translated report to %s", translated_path)
+
     print(f"\nSummary:")
     print(f"  Candidates: {len(candidates)}")
     print(f"  Scores:     {scored_path}")
     print(f"  Report:     {report_path}")
+    if translated_path:
+        print(f"  Report zh:  {translated_path}")
 
 
 if __name__ == "__main__":

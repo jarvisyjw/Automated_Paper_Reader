@@ -1,8 +1,10 @@
 const params = new URLSearchParams(window.location.search);
 const reportFile = params.get('file');
+let currentLang = params.get('lang') === 'zh' ? 'zh' : 'en';
 const titleEl = document.getElementById('report-title');
 const metaEl = document.getElementById('report-meta');
 const contentEl = document.getElementById('report-content');
+let pageTitle = '';
 
 function escapeHtml(text) {
     return text
@@ -82,19 +84,61 @@ function reportTitleFromFile(file) {
     return `${name}_report`;
 }
 
-(async () => {
+function localizedReportFile(file, lang) {
+    const name = file.split('/').pop();
+    return lang === 'zh' ? `reports/zh/${name}` : `reports/${name}`;
+}
+
+function setUrlLang(lang) {
+    const nextParams = new URLSearchParams(window.location.search);
+    nextParams.set('lang', lang);
+    window.history.replaceState({}, '', `${window.location.pathname}?${nextParams.toString()}`);
+}
+
+function insertLanguageSwitch() {
+    const existing = contentEl.querySelector('.language-switch');
+    if (existing) existing.remove();
+
+    const switchEl = document.createElement('div');
+    switchEl.className = 'language-switch';
+    switchEl.innerHTML = `
+        <span>Language</span>
+        <button type="button" data-lang="en">EN</button>
+        <button type="button" data-lang="zh">中文</button>
+    `;
+    switchEl.querySelectorAll('button').forEach((button) => {
+        const lang = button.getAttribute('data-lang');
+        if (lang === currentLang) button.classList.add('active');
+        button.addEventListener('click', async () => {
+            if (lang === currentLang) return;
+            currentLang = lang;
+            setUrlLang(lang);
+            await loadReport();
+        });
+    });
+
+    const firstHeading = contentEl.querySelector('h1');
+    if (firstHeading) {
+        firstHeading.insertAdjacentElement('afterend', switchEl);
+    } else {
+        contentEl.prepend(switchEl);
+    }
+}
+
+async function loadReport() {
     if (!reportFile || !/^reports\/[A-Za-z0-9._-]+\.md$/.test(reportFile)) {
         metaEl.textContent = 'Missing or invalid report file.';
         contentEl.innerHTML = '<p>Open a report from the report list.</p>';
         return;
     }
 
-    const pageTitle = reportTitleFromFile(reportFile);
+    pageTitle = reportTitleFromFile(reportFile);
     titleEl.textContent = pageTitle;
-    metaEl.textContent = reportFile;
+    const targetFile = localizedReportFile(reportFile, currentLang);
+    metaEl.textContent = currentLang === 'zh' ? `${targetFile} · 中文` : `${targetFile} · English`;
 
     try {
-        const response = await fetch(reportFile);
+        const response = await fetch(targetFile);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const markdown = await response.text();
         contentEl.innerHTML = renderMarkdown(markdown);
@@ -102,8 +146,15 @@ function reportTitleFromFile(file) {
         if (firstHeading && /^Daily Paper Report( Template)?$/i.test(firstHeading.textContent.trim())) {
             firstHeading.textContent = pageTitle;
         }
+        insertLanguageSwitch();
     } catch (error) {
         metaEl.textContent = 'Could not load report.';
-        contentEl.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
+        contentEl.innerHTML = `
+            <h1>${escapeHtml(pageTitle || 'Daily Paper Report')}</h1>
+            <p>${escapeHtml(error.message)}</p>
+        `;
+        insertLanguageSwitch();
     }
-})();
+}
+
+loadReport();

@@ -208,3 +208,6 @@ report:
     max_pages: 8
     max_chars_per_paper: 10000
     request_timeout_seconds: 60
+  translation:
+    enabled: true
+    target_language: zh-CN

@@ -8,6 +8,8 @@ from scripts.llm_report import (
     load_report_template,
     pdf_reading_config,
     strip_prompt_only_fields,
+    strip_markdown_fence,
+    translation_config,
 )
 
 
@@ -137,3 +139,20 @@ def test_strip_prompt_only_fields_removes_pdf_text() -> None:
     stripped = strip_prompt_only_fields(paper)
 
     assert stripped == {"id": "paper-1", "title": "Keep me"}
+
+
+def test_translation_config_defaults_to_disabled() -> None:
+    config = translation_config({})
+
+    assert config == {"enabled": False, "target_language": "zh-CN"}
+
+
+def test_translation_config_reads_report_settings() -> None:
+    config = translation_config({"report": {"translation": {"enabled": True, "target_language": "zh-Hans"}}})
+
+    assert config == {"enabled": True, "target_language": "zh-Hans"}
+
+
+def test_strip_markdown_fence() -> None:
+    assert strip_markdown_fence("```markdown\n# Title\n```") == "# Title"
+    assert strip_markdown_fence("plain") == "plain"

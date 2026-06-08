@@ -178,11 +178,15 @@ jobs:
             DATE="$REPORT_DATE_INPUT"
           fi
           REPORT_FILE="reports/${DATE}.md"
+          REPORT_ZH_FILE="reports/zh/${DATE}.md"
 
-          mkdir -p docs/reports
+          mkdir -p docs/reports/zh
 
           if [ -f "paper-daily/${REPORT_FILE}" ]; then
             cp "paper-daily/${REPORT_FILE}" "docs/reports/"
+            if [ -f "paper-daily/${REPORT_ZH_FILE}" ]; then
+              cp "paper-daily/${REPORT_ZH_FILE}" "docs/reports/zh/"
+            fi
 
             python3 - "${SCRIPT_DIR}" "${DATE}" << 'PYEOF'
           import json
