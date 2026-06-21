@@ -35,6 +35,7 @@ from utils import (
 DEFAULT_API_BASE = "https://api.openai.com/v1"
 DEFAULT_LLM_LIMIT = 20
 DEFAULT_TIMEOUT_SECONDS = 1800
+DEFAULT_LLM_BATCH_SIZE = 5
 
 
 def parse_args() -> argparse.Namespace:
@@ -206,6 +207,11 @@ def pdf_reading_config(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def llm_batch_size(config: dict[str, Any]) -> int:
+    report_config = config.get("report", {})
+    return max(1, int(report_config.get("llm_batch_size", DEFAULT_LLM_BATCH_SIZE)))
+
+
 def translation_config(config: dict[str, Any]) -> dict[str, Any]:
     translation = config.get("report", {}).get("translation", {})
     return {
@@ -260,9 +266,10 @@ def enrich_candidates_with_pdf_text(
 
     enriched: list[dict[str, Any]] = []
     remaining_total_chars = max(0, int(pdf_config["max_total_chars"]))
+    effective_max_papers = min(max_papers, len(candidates))
     logger.info(
         "Reading PDF text for up to %d papers, max_pages=%d, max_chars_per_paper=%d, max_total_chars=%d.",
-        max_papers,
+        effective_max_papers,
         pdf_config["max_pages"],
         pdf_config["max_chars_per_paper"],
         remaining_total_chars,
@@ -407,6 +414,160 @@ def build_user_prompt(
     )
 
 
+def build_scoring_prompt(
+    candidates: list[dict[str, Any]],
+    report_date: str,
+    batch_index: int,
+    batch_count: int,
+) -> str:
+    papers_text = []
+    for i, p in enumerate(candidates, 1):
+        papers_text.append(
+            f"### Paper {i}\n"
+            f"**ID:** {p.get('id', '')}\n"
+            f"**Title:** {p.get('title', '')}\n"
+            f"**Authors:** {', '.join(p.get('authors', []))}\n"
+            f"**Abstract:** {p.get('abstract', '')}\n"
+            f"**URL:** {p.get('url', '')}\n"
+            f"**Categories:** {', '.join(p.get('categories', []))}\n"
+            f"**Keyword matches:** {', '.join(p.get('matched_keywords', []))}\n"
+            f"**Retrieval reason:** {p.get('retrieval_reason', '')}\n"
+            f"**Reading evidence hint:** {p.get('_reading_evidence_hint', 'abstract-only')}\n"
+            f"**PDF read warning:** {p.get('_pdf_read_warning', '')}\n"
+            f"**PDF text excerpt:** {p.get('_pdf_text_excerpt', '')}"
+        )
+    return (
+        f"Score batch {batch_index}/{batch_count} for the date {report_date}. "
+        "Score every paper independently against the research profile. Do not force a fixed number "
+        "of papers to be selected inside this batch; global top papers will be chosen after all batches.\n\n"
+        "For each paper, provide semantic_scores, selected_for_deep_read, reading_evidence, "
+        "a concise evidence_summary, and a concise relevance_rationale. "
+        "Set reading_evidence to pdf when a PDF text excerpt is present; otherwise use abstract-only.\n\n"
+        "Respond with a JSON object matching this schema:\n"
+        "{\n"
+        '  "date": "...",\n'
+        '  "status": "ok",\n'
+        "  \"papers\": [\n"
+        "    {\n"
+        '      "id": "...",\n'
+        '      "title": "...",\n'
+        '      "semantic_scores": {\n'
+        '        "methodological_relevance": 0,\n'
+        '        "inspiration_value": 0,\n'
+        '        "transferability_to_my_research": 0,\n'
+        '        "paper_quality": 0,\n'
+        '        "novelty_timeliness": 0,\n'
+        '        "actionability": 0,\n'
+        '        "final_score": 0\n'
+        "      },\n"
+        '      "selected_for_deep_read": false,\n'
+        '      "reading_evidence": "abstract-only",\n'
+        '      "evidence_summary": "...",\n'
+        '      "relevance_rationale": "..."\n'
+        "    }\n"
+        "  ]\n"
+        "}\n\n"
+        "Here are the papers:\n\n" + "\n\n".join(papers_text)
+    )
+
+
+def build_report_prompt(
+    scored_candidates: list[dict[str, Any]],
+    report_date: str,
+    report_template: str,
+    paper_template: str,
+) -> str:
+    rendered_report_template = report_template.replace("{report_date}", report_date)
+    compact_papers = []
+    for p in scored_candidates:
+        scores = p.get("semantic_scores", {})
+        compact_papers.append(
+            {
+                "id": p.get("id", ""),
+                "title": p.get("title", ""),
+                "authors": p.get("authors", []),
+                "abstract": p.get("abstract", ""),
+                "url": p.get("url", ""),
+                "categories": p.get("categories", []),
+                "matched_keywords": p.get("matched_keywords", []),
+                "semantic_scores": scores,
+                "semantic_rank": p.get("semantic_rank", 0),
+                "selected_for_top10": p.get("selected_for_top10", False),
+                "selected_for_deep_read": p.get("selected_for_deep_read", False),
+                "reading_evidence": p.get("reading_evidence", "abstract-only"),
+                "evidence_summary": p.get("evidence_summary", ""),
+                "relevance_rationale": p.get("relevance_rationale", ""),
+            }
+        )
+    return (
+        f"Write the final Markdown daily paper report for {report_date} using the globally ranked papers below. "
+        "Use the ranking and scores as authoritative. Focus detailed per-paper summaries on papers with "
+        "selected_for_top10=true.\n\n"
+        "Report template:\n\n"
+        "----- BEGIN REPORT TEMPLATE -----\n"
+        f"{rendered_report_template}\n"
+        "----- END REPORT TEMPLATE -----\n\n"
+        "Per-paper summary template:\n\n"
+        "----- BEGIN PER-PAPER TEMPLATE -----\n"
+        f"{paper_template}\n"
+        "----- END PER-PAPER TEMPLATE -----\n\n"
+        "Return only the Markdown report. Do not wrap it in a JSON object or code fence.\n\n"
+        "Globally scored papers:\n\n"
+        f"{json.dumps(compact_papers, ensure_ascii=False, indent=2)}"
+    )
+
+
+def parse_llm_json(llm_output: str, logger: logging.Logger, context: str) -> dict[str, Any]:
+    cleaned = strip_markdown_fence(llm_output)
+    try:
+        result = json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        logger.error("Failed to parse %s LLM response as JSON: %s", context, exc)
+        logger.error("Raw LLM output (first 500 chars):\n%s", cleaned[:500])
+        raise
+    if not isinstance(result, dict):
+        raise ValueError(f"{context} LLM response is not a JSON object.")
+    return result
+
+
+def batched(items: list[dict[str, Any]], batch_size: int) -> list[list[dict[str, Any]]]:
+    return [items[start : start + batch_size] for start in range(0, len(items), batch_size)]
+
+
+def final_score(paper: dict[str, Any]) -> float:
+    scores = paper.get("semantic_scores", {})
+    try:
+        return float(scores.get("final_score", 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def merge_and_rank_candidates(
+    candidates: list[dict[str, Any]],
+    scored_papers: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    candidate_by_id = {p.get("id"): strip_prompt_only_fields(p) for p in candidates}
+    merged_by_id: dict[str, dict[str, Any]] = {}
+    for scored in scored_papers:
+        paper_id = scored.get("id", "")
+        if not paper_id:
+            continue
+        original = candidate_by_id.get(paper_id, {})
+        merged_by_id[paper_id] = {**original, **scored}
+
+    for candidate in candidates:
+        paper_id = candidate.get("id", "")
+        if paper_id and paper_id not in merged_by_id:
+            merged_by_id[paper_id] = strip_prompt_only_fields(candidate)
+
+    ranked = sorted(merged_by_id.values(), key=final_score, reverse=True)
+    for rank, paper in enumerate(ranked, 1):
+        paper["semantic_rank"] = rank
+        paper["selected_for_top10"] = rank <= 10
+        paper["selected_for_deep_read"] = bool(paper.get("selected_for_deep_read") or rank <= 10)
+    return ranked
+
+
 def write_no_new_batch_note(paths: dict[str, Path], target_date: date, raw_data: dict[str, Any], logger: logging.Logger) -> None:
     dup = raw_data.get("duplicate_check", {})
     note = (
@@ -485,7 +646,15 @@ def main() -> None:
         }, logger)
         return
 
-    logger.info("Calling LLM API to score %d papers with timeout=%ss...", len(candidates), timeout_seconds)
+    batch_size = llm_batch_size(config)
+    candidate_batches = batched(candidates, batch_size)
+    logger.info(
+        "Calling LLM API to score %d papers in %d batch(es) of up to %d with timeout=%ss per call...",
+        len(candidates),
+        len(candidate_batches),
+        batch_size,
+        timeout_seconds,
+    )
 
     try:
         report_template = load_report_template(args.config, config)
@@ -494,42 +663,61 @@ def main() -> None:
         logger.error("Failed to load report template: %s", exc)
         sys.exit(1)
 
-    candidates_for_prompt = enrich_candidates_with_pdf_text(candidates, config, logger)
-
     system_prompt = build_system_prompt(config)
-    user_prompt = build_user_prompt(candidates_for_prompt, str(target_date), report_template, paper_template)
+    scored_papers: list[dict[str, Any]] = []
+    for batch_index, candidate_batch in enumerate(candidate_batches, 1):
+        logger.info(
+            "Scoring LLM batch %d/%d with %d paper(s)...",
+            batch_index,
+            len(candidate_batches),
+            len(candidate_batch),
+        )
+        candidates_for_prompt = enrich_candidates_with_pdf_text(candidate_batch, config, logger)
+        user_prompt = build_scoring_prompt(
+            candidates_for_prompt,
+            str(target_date),
+            batch_index,
+            len(candidate_batches),
+        )
+        try:
+            llm_output = call_llm(api_base, api_key, model, system_prompt, user_prompt, timeout_seconds=timeout_seconds)
+        except Exception as exc:
+            logger.error("LLM API call failed for scoring batch %d/%d: %s", batch_index, len(candidate_batches), exc)
+            sys.exit(1)
 
+        try:
+            batch_result = parse_llm_json(llm_output, logger, f"batch {batch_index}/{len(candidate_batches)}")
+        except Exception:
+            sys.exit(1)
+        batch_papers = batch_result.get("papers", [])
+        if not isinstance(batch_papers, list):
+            logger.error("Batch %d/%d response does not contain a papers list.", batch_index, len(candidate_batches))
+            sys.exit(1)
+        scored_papers.extend(batch_papers)
+
+    scored_candidates = merge_and_rank_candidates(candidates, scored_papers)
+
+    logger.info("Generating final Markdown report from %d globally ranked paper(s)...", len(scored_candidates))
+    report_prompt = build_report_prompt(scored_candidates, str(target_date), report_template, paper_template)
     try:
-        llm_output = call_llm(api_base, api_key, model, system_prompt, user_prompt, timeout_seconds=timeout_seconds)
+        report_markdown = call_llm(
+            api_base,
+            api_key,
+            model,
+            system_prompt,
+            report_prompt,
+            timeout_seconds=timeout_seconds,
+        )
     except Exception as exc:
-        logger.error("LLM API call failed: %s", exc)
+        logger.error("LLM API call failed for final report generation: %s", exc)
         sys.exit(1)
 
-    llm_output = strip_markdown_fence(llm_output)
-
-    try:
-        result = json.loads(llm_output)
-    except json.JSONDecodeError as exc:
-        logger.error("Failed to parse LLM response as JSON: %s", exc)
-        logger.error("Raw LLM output (first 500 chars):\n%s", llm_output[:500])
-        sys.exit(1)
-
-    papers_out = result.get("papers", [])
-    report_markdown = result.get("report_markdown", "# Daily Report\n\nNo report content generated.")
-
-    scored_candidates = []
-    candidate_by_id = {p.get("id"): strip_prompt_only_fields(p) for p in candidates}
-
-    for scored in papers_out:
-        paper_id = scored.get("id", "")
-        original = candidate_by_id.get(paper_id, {})
-        merged = {**original, **scored}
-        scored_candidates.append(merged)
+    report_markdown = strip_markdown_fence(report_markdown)
 
     scored_path = paths["processed_dir"] / f"{target_date}_scored.json"
     scored_output = {
         "date": str(target_date),
-        "status": result.get("status", "ok"),
+        "status": "ok",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "candidate_path": str(candidate_path),
         "candidate_count": len(candidates),

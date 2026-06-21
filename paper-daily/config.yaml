@@ -202,6 +202,7 @@ retrieval:
 report:
   template_path: report.template.md
   paper_template_path: paper-summary.template.md
+  llm_batch_size: 5
   pdf_reading:
     enabled: true
     max_papers: 20

@@ -4,8 +4,10 @@ import pytest
 
 from scripts.llm_report import (
     build_user_prompt,
+    llm_batch_size,
     load_paper_template,
     load_report_template,
+    merge_and_rank_candidates,
     pdf_reading_config,
     strip_prompt_only_fields,
     strip_markdown_fence,
@@ -126,6 +128,26 @@ def test_pdf_reading_config_defaults_to_disabled() -> None:
     assert config["enabled"] is False
     assert config["max_papers"] == 20
     assert config["max_total_chars"] == 90000
+
+
+def test_llm_batch_size_defaults_to_five() -> None:
+    assert llm_batch_size({}) == 5
+    assert llm_batch_size({"report": {"llm_batch_size": 3}}) == 3
+    assert llm_batch_size({"report": {"llm_batch_size": 0}}) == 1
+
+
+def test_merge_and_rank_candidates_assigns_global_top10() -> None:
+    candidates = [{"id": "a", "title": "A"}, {"id": "b", "title": "B"}]
+    scored = [
+        {"id": "a", "semantic_scores": {"final_score": 2.0}},
+        {"id": "b", "semantic_scores": {"final_score": 4.0}},
+    ]
+
+    ranked = merge_and_rank_candidates(candidates, scored)
+
+    assert [paper["id"] for paper in ranked] == ["b", "a"]
+    assert [paper["semantic_rank"] for paper in ranked] == [1, 2]
+    assert all(paper["selected_for_top10"] for paper in ranked)
 
 
 def test_strip_prompt_only_fields_removes_pdf_text() -> None:
